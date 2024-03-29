@@ -29,6 +29,7 @@ function render(component, container) {
       children: [component],
     },
   };
+  requestIdleCallback(workerLoop);
 }
 
 let nextWorkOfUnit = null;
@@ -52,7 +53,7 @@ function workerLoop(deadLine) {
 function performUnitOfWork(work) {
   // TODO
   // 1. add dom
-  if (!work?.dom) {
+  if (work?.dom) {
     console.log(work, "work");
     const dom =
       work.type === "TEXT_ELEMENT"
@@ -95,7 +96,7 @@ function performUnitOfWork(work) {
     return work.parent?.sibling;
   }
 }
-requestIdleCallback(workerLoop);
+
 const React = {
   createElement,
   render,
