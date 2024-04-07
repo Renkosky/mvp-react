@@ -1,10 +1,20 @@
 import React from "./core/React.js";
 
-//  const app = React.createElement(
-//   "div",
-//   { id: "app" },
-//   "Hello World from My React"
-// );
-const App = <div>hi! react</div>
+function CounterContain(){
+  
+  return   <div>
+    CounterContain
+    <Counter num={10}></Counter>
+    <Counter num={20}></Counter>
+  </div>
+}
+
+function Counter({num}){
+  return <div>counter:{num}</div>
+}
+const App = <div>hi! react
+
+<CounterContain />
+</div>
 
 export default App
