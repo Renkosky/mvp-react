@@ -32,9 +32,11 @@ function render(component, container) {
       children: [component],
     },
   };
-  root = nextWorkOfUnit;
+  workInProgressRoot = nextWorkOfUnit;
 }
-let root = null;
+
+let workInProgressRoot = null;
+let currentRoot = null;
 let nextWorkOfUnit = null;
 
 function workerLoop(deadLine) {
@@ -57,39 +59,81 @@ function createDom(type) {
     : document.createElement(type);
 }
 
-function updateProps(dom, props) {
-  Object.keys(props)
-    .filter((key) => key !== "children")
-    .forEach((name) => {
-      dom[name] = props[name];
-    });
+function updateProps(dom, nextprops, preProps) {
+  // 1. old 有属性 new没有需要删除
+  Object.keys(preProps).forEach((name) => {
+    if (name !== "children" && !nextprops.hasOwnProperty(name)) {
+      dom.removeAttribute(name);
+    }
+  });
+  // 2. new 有属性 old没有需要添加
+  // 3. old new 都有属性，需要更新
+  Object.keys(nextprops).forEach((name) => {
+    if (name !== "children") {
+      if (nextprops[name] !== preProps[name]) {
+        if (name.startsWith("on")) {
+          const eventName = name.slice(2)?.toLowerCase();
+          dom.removeEventListener(eventName, preProps[name]);
+          dom.addEventListener(eventName, nextprops[name]);
+        } else {
+          dom[name] = nextprops[name];
+        }
+      }
+    }
+  });
 }
 
-function initChildren(fiber, children) {
+function reconcileChildren(fiber, children) {
   // 3. create new fiber 转换链表设置指针
-
+  let oldFiber = fiber.alternate?.child;
   let prevSibling = null;
+  let newFiber = null;
   children.forEach((child, index) => {
-    const newFiber = {
-      type: child.type,
-      props: child.props,
-      dom: null,
-      parent: fiber,
-      sibling: null,
-      child: null,
-    };
+    const isSameType = child && oldFiber && child.type === oldFiber.type;
+    if (isSameType) {
+      // update
+      newFiber = {
+        type: child.type,
+        props: child.props,
+        dom: oldFiber.dom,
+        parent: fiber,
+        sibling: null,
+        child: null,
+        effectTag: "UPDATE",
+        alternate: oldFiber,
+      };
+    } else {
+      newFiber = {
+        type: child.type,
+        props: child.props,
+        dom: null,
+        parent: fiber,
+        sibling: null,
+        child: null,
+        effectTag: "PLACEMENT",
+      };
+    }
+
+    if (oldFiber) {
+      // 移动指针
+      oldFiber = oldFiber.sibling;
+    }
+
     if (index === 0) {
+      // 设置子节点
       fiber.child = newFiber;
     } else {
+      // 设置兄弟节点
       prevSibling.sibling = newFiber;
     }
+    // 设置上一个节点
     prevSibling = newFiber;
   });
 }
 
 function updateFunctionComponent(fiber) {
   const chilidren = [fiber.type(fiber.props)];
-  initChildren(fiber, chilidren);
+  reconcileChildren(fiber, chilidren);
 }
 
 function updateHostComponent(fiber) {
@@ -100,10 +144,10 @@ function updateHostComponent(fiber) {
     fiber.dom = dom;
     // fiber.parent?.dom?.appendChild(dom);
     // 2. add props
-    updateProps(dom, fiber.props);
+    updateProps(dom, fiber.props, {});
   }
 
-  initChildren(fiber, children);
+  reconcileChildren(fiber, children);
 }
 
 /**
@@ -123,6 +167,7 @@ function performUnitOfWork(fiber) {
   if (fiber.child) {
     return fiber.child;
   }
+
   let nextfiber = fiber;
   while (nextfiber) {
     if (nextfiber.sibling) {
@@ -135,16 +180,25 @@ function performUnitOfWork(fiber) {
 
 function commitRoot() {
   // 统一最后提交
-  commitWorker(root.child);
+  commitWork(root.child);
+  currentRoot = root;
   root = null;
 }
 
-function commitWorker(fiber) {
+// 递归提交
+function commitWork(fiber) {
   if (!fiber) return;
   let fiberParentDom = findParentDom(fiber);
-  fiber.dom && fiberParentDom.appendChild(fiber.dom);
-  commitWorker(fiber.child);
-  commitWorker(fiber.sibling);
+  if (fiber.dom) {
+    if (fiber.effectTag === "UPDATE") {
+      updateProps(fiber.dom, fiber.props, fiber.alternate?.props);
+    } else if (fiber.effectTag === "PLACEMENT") {
+      fiberParentDom.appendChild(fiber.dom);
+    }
+  }
+
+  commitWork(fiber.child);
+  commitWork(fiber.sibling);
 }
 
 function findParentDom(fiber) {
@@ -155,11 +209,23 @@ function findParentDom(fiber) {
   return parent.dom;
 }
 
+function update() {
+  // create dom
+  // console.log(container, "container", component, "component");
+  nextWorkOfUnit = {
+    dom: currentRoot.dom,
+    props: currentRoot.props,
+    alternate: currentRoot,
+  };
+  workInProgressRoot = nextWorkOfUnit;
+}
+
 requestIdleCallback(workerLoop);
 
 const React = {
   createElement,
   render,
+  update,
 };
 
 export default React;
