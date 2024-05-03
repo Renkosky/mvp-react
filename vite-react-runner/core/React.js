@@ -1,4 +1,9 @@
 //@ts-ignore
+let workInProgressRoot = null;
+let currentRoot = null;
+let nextWorkOfUnit = null;
+let deletions = [];
+let wipFiber = null;
 function createTextNode(text) {
   return {
     type: "TEXT_ELEMENT",
@@ -26,28 +31,30 @@ function createElement(type, props, ...children) {
 function render(component, container) {
   // create dom
   console.log(container, "container", component, "component");
-  nextWorkOfUnit = {
+  workInProgressRoot = {
     dom: container,
     props: {
       children: [component],
     },
   };
-  workInProgressRoot = nextWorkOfUnit;
+  nextWorkOfUnit = workInProgressRoot;
 }
-
-let workInProgressRoot = null;
-let currentRoot = null;
-let nextWorkOfUnit = null;
 
 function workerLoop(deadLine) {
   let shouldYeild = false;
   while (!shouldYeild && nextWorkOfUnit) {
     // 一直执行，直到时间不够
     nextWorkOfUnit = performUnitOfWork(nextWorkOfUnit);
+
+    // 如果是同一个节点，直接跳过
+    if (workInProgressRoot?.sibling?.type === nextWorkOfUnit?.type) {
+      nextWorkOfUnit = undefined;
+    }
+
     //单位是微秒
     shouldYeild = deadLine.timeRemaining() < 1;
   }
-  if (root && !nextWorkOfUnit) {
+  if (workInProgressRoot && !nextWorkOfUnit) {
     commitRoot();
   }
   requestIdleCallback(workerLoop);
@@ -103,6 +110,7 @@ function reconcileChildren(fiber, children) {
         alternate: oldFiber,
       };
     } else {
+      if (!child) return;
       newFiber = {
         type: child.type,
         props: child.props,
@@ -112,6 +120,9 @@ function reconcileChildren(fiber, children) {
         child: null,
         effectTag: "PLACEMENT",
       };
+      if (oldFiber) {
+        deletions.push(oldFiber);
+      }
     }
 
     if (oldFiber) {
@@ -127,11 +138,19 @@ function reconcileChildren(fiber, children) {
       prevSibling.sibling = newFiber;
     }
     // 设置上一个节点
-    prevSibling = newFiber;
+    if (newFiber) {
+      prevSibling = newFiber;
+    }
   });
+  while (oldFiber) {
+    deletions.push(oldFiber);
+
+    oldFiber = oldFiber.sibling;
+  }
 }
 
 function updateFunctionComponent(fiber) {
+  wipFiber = fiber;
   const chilidren = [fiber.type(fiber.props)];
   reconcileChildren(fiber, chilidren);
 }
@@ -139,7 +158,6 @@ function updateFunctionComponent(fiber) {
 function updateHostComponent(fiber) {
   const children = fiber.props.children;
   if (!fiber?.dom) {
-    console.log(fiber, "fiber");
     const dom = createDom(fiber.type);
     fiber.dom = dom;
     // fiber.parent?.dom?.appendChild(dom);
@@ -180,9 +198,11 @@ function performUnitOfWork(fiber) {
 
 function commitRoot() {
   // 统一最后提交
-  commitWork(root.child);
-  currentRoot = root;
-  root = null;
+  deletions.forEach(commitDeletion);
+  commitWork(workInProgressRoot.child);
+  currentRoot = workInProgressRoot;
+  workInProgressRoot = null;
+  deletions = [];
 }
 
 // 递归提交
@@ -201,6 +221,17 @@ function commitWork(fiber) {
   commitWork(fiber.sibling);
 }
 
+function commitDeletion(fiber) {
+  if (fiber?.dom) {
+    let fiberParent = findParentDom(fiber);
+    console.log(fiber.dom, "fiber.dom");
+    console.log(fiberParent, "fiberParent");
+    fiberParent.removeChild(fiber.dom);
+  } else {
+    commitDeletion(fiber.child);
+  }
+}
+
 function findParentDom(fiber) {
   let parent = fiber.parent;
   while (!parent.dom) {
@@ -212,12 +243,14 @@ function findParentDom(fiber) {
 function update() {
   // create dom
   // console.log(container, "container", component, "component");
-  nextWorkOfUnit = {
-    dom: currentRoot.dom,
-    props: currentRoot.props,
-    alternate: currentRoot,
+  let currentFiber = wipFiber;
+  return () => {
+    workInProgressRoot = {
+      ...currentFiber,
+      alternate: currentFiber,
+    };
+    nextWorkOfUnit = workInProgressRoot;
   };
-  workInProgressRoot = nextWorkOfUnit;
 }
 
 requestIdleCallback(workerLoop);
