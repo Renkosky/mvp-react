@@ -1,6 +1,6 @@
 import React from "./core/React.js";
 
-let count = 10
+// let count = 10
 let props = {id:'111'}
 let showBar = false
 let countBar = 10
@@ -36,15 +36,18 @@ function Counter({num}){
 
 function Foo(){
   const update = React.update()
-
+  const [count,setCount] = React.useState(10)
+  const [bar,setBar] = React.useState('bar')
   function handleClick(){
-    count++
-    update()
+    setCount(count=>count+1)
   }
-
+  const handleClickBar = ()=>{
+    setBar(bar=>bar+'bar')
+  }
 
   return <div>
   <button onClick={handleClick}>Foo: {count}</button>
+  <button onClick={handleClickBar}>Bar: {bar}</button>
 </div>
 }
 

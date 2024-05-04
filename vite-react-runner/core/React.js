@@ -4,6 +4,8 @@ let currentRoot = null;
 let nextWorkOfUnit = null;
 let deletions = [];
 let wipFiber = null;
+let stateHooks = null;
+let hookIndex = 0;
 function createTextNode(text) {
   return {
     type: "TEXT_ELEMENT",
@@ -150,6 +152,8 @@ function reconcileChildren(fiber, children) {
 }
 
 function updateFunctionComponent(fiber) {
+  stateHooks = [];
+  hookIndex = 0;
   wipFiber = fiber;
   const chilidren = [fiber.type(fiber.props)];
   reconcileChildren(fiber, chilidren);
@@ -253,12 +257,47 @@ function update() {
   };
 }
 
+function useState(inital) {
+  let currentFiber = wipFiber;
+  const oldHook = currentFiber.alternate?.stateHooks[hookIndex];
+  console.log(oldHook, "oldHook");
+  const stateHook = {
+    state: oldHook ? oldHook?.state : inital,
+    queue: oldHook?.queue ? oldHook?.queue : [],
+  };
+  stateHook.queue.forEach((action) => {
+    stateHook.state = action(stateHook.state);
+  });
+  stateHook.queue = [];
+  hookIndex++;
+  stateHooks.push(stateHook);
+
+  // hook 保存在当前fiber上
+  currentFiber.stateHooks = stateHooks;
+
+  function setState(action) {
+    const eagerState =
+      typeof action === "function" ? action(stateHook.state) : action;
+    if (eagerState === stateHook.state) return;
+
+    stateHook.queue.push(typeof action === "function" ? action : () => action);
+    workInProgressRoot = {
+      ...currentFiber,
+      alternate: currentFiber,
+    };
+    nextWorkOfUnit = workInProgressRoot;
+  }
+  console.log(stateHooks, "stateHooks");
+  return [stateHook.state, setState];
+}
+
 requestIdleCallback(workerLoop);
 
 const React = {
   createElement,
   render,
   update,
+  useState,
 };
 
 export default React;
